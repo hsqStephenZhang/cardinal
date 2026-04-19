@@ -49,14 +49,14 @@ pub fn as_term(expr: &Expr) -> &Term {
 
 pub fn word_is(expr: &Expr, expected: &str) {
     match as_term(expr) {
-        Term::Word(w) => assert_eq!(w, expected),
+        Term::Word(w) => assert_eq!(w.as_ref(), expected),
         other => panic!("expected Word, got: {other:?}"),
     }
 }
 
 pub fn regex_is(expr: &Expr, expected: &str) {
     match as_term(expr) {
-        Term::Regex(pat) => assert_eq!(pat, expected),
+        Term::Regex(pat) => assert_eq!(pat.as_ref(), expected),
         other => panic!("expected Regex, got: {other:?}"),
     }
 }
@@ -71,7 +71,7 @@ pub fn filter_kind(expr: &Expr) -> (&FilterKind, &Option<FilterArgument>) {
 pub fn filter_is_custom(expr: &Expr, name: &str) {
     let (k, _) = filter_kind(expr);
     match k {
-        FilterKind::Custom(n) => assert_eq!(n, name),
+        FilterKind::Custom(n) => assert_eq!(n.as_ref(), name),
         other => panic!("expected Custom({name}), got: {other:?}"),
     }
 }
@@ -89,7 +89,7 @@ pub fn filter_arg_none(expr: &Expr) {
 pub fn filter_arg_raw(expr: &Expr, expected: &str) {
     let (_, arg) = filter_kind(expr);
     let arg = arg.as_ref().expect("missing argument");
-    assert_eq!(arg.raw, expected);
+    assert_eq!(arg.raw.as_ref(), expected);
 }
 
 pub fn filter_arg_is_list(expr: &Expr, expected: &[&str]) {
@@ -97,8 +97,8 @@ pub fn filter_arg_is_list(expr: &Expr, expected: &[&str]) {
     let arg = arg.as_ref().expect("missing argument");
     match &arg.kind {
         ArgumentKind::List(values) => {
-            let exp: Vec<String> = expected.iter().map(|s| s.to_string()).collect();
-            assert_eq!(*values, exp);
+            let actual: Vec<&str> = values.iter().map(|s| s.as_ref()).collect();
+            assert_eq!(actual, expected);
         }
         other => panic!("expected List, got: {other:?}"),
     }
@@ -136,7 +136,7 @@ pub fn filter_arg_is_comparison(expr: &Expr, op: ComparisonOp, value: &str) {
     match &arg.kind {
         ArgumentKind::Comparison(ComparisonValue { op: o, value: v }) => {
             assert_eq!(*o, op);
-            assert_eq!(v, value);
+            assert_eq!(v.as_ref(), value);
         }
         other => panic!("expected Comparison, got: {other:?}"),
     }

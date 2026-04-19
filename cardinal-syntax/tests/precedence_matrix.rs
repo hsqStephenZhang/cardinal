@@ -1,7 +1,7 @@
 use cardinal_syntax::*;
 
 fn w(s: &str) -> Expr {
-    Expr::Term(Term::Word(s.to_string()))
+    Expr::Term(Term::Word(s.into()))
 }
 
 fn top_is_and(expr: &Expr) -> (&[Expr], bool) {
@@ -19,16 +19,16 @@ fn or_has_higher_precedence_than_and() {
             3,
             vec![
                 // a
-                |e: &Expr| matches!(e, Expr::Term(Term::Word(s)) if s == "a"),
+                |e: &Expr| matches!(e, Expr::Term(Term::Word(s)) if s.as_ref() == "a"),
                 // b|c
                 |e: &Expr| {
                     matches!(e, Expr::Or(parts) if parts.len() == 2
-                        && matches!(&parts[0], Expr::Term(Term::Word(s)) if s == "b")
-                        && matches!(&parts[1], Expr::Term(Term::Word(s)) if s == "c")
+                        && matches!(&parts[0], Expr::Term(Term::Word(s)) if s.as_ref() == "b")
+                        && matches!(&parts[1], Expr::Term(Term::Word(s)) if s.as_ref() == "c")
                     )
                 },
                 // d
-                |e: &Expr| matches!(e, Expr::Term(Term::Word(s)) if s == "d"),
+                |e: &Expr| matches!(e, Expr::Term(Term::Word(s)) if s.as_ref() == "d"),
             ],
         ),
         (
@@ -44,7 +44,7 @@ fn or_has_higher_precedence_than_and() {
             2,
             vec![
                 |e: &Expr| matches!(e, Expr::Or(parts) if parts.len() == 2),
-                |e: &Expr| matches!(e, Expr::Term(Term::Word(s)) if s == "c"),
+                |e: &Expr| matches!(e, Expr::Term(Term::Word(s)) if s.as_ref() == "c"),
             ],
         ),
     ];
@@ -69,10 +69,10 @@ fn not_binds_tighter_than_or_and() {
                 |e: &Expr| {
                     matches!(e, Expr::Or(parts)
                         if matches!(&parts[0], Expr::Not(_))
-                        && matches!(&parts[1], Expr::Term(Term::Word(s)) if s == "b")
+                        && matches!(&parts[1], Expr::Term(Term::Word(s)) if s.as_ref() == "b")
                     )
                 },
-                |e: &Expr| matches!(e, Expr::Term(Term::Word(s)) if s == "c"),
+                |e: &Expr| matches!(e, Expr::Term(Term::Word(s)) if s.as_ref() == "c"),
             ],
         ),
         (
@@ -81,7 +81,7 @@ fn not_binds_tighter_than_or_and() {
                 |e: &Expr| {
                     matches!(e, Expr::Or(parts)
                         if matches!(&parts[0], Expr::Not(_))
-                        && matches!(&parts[1], Expr::Term(Term::Word(s)) if s == "b")
+                        && matches!(&parts[1], Expr::Term(Term::Word(s)) if s.as_ref() == "b")
                     )
                 },
                 |e: &Expr| matches!(e, Expr::Not(_)),
@@ -95,7 +95,7 @@ fn not_binds_tighter_than_or_and() {
                         if matches!(&parts[0], Expr::Not(inner) if !matches!(&**inner, Expr::Not(_)))
                     )
                 },
-                |e: &Expr| matches!(e, Expr::Term(Term::Word(s)) if s == "z"),
+                |e: &Expr| matches!(e, Expr::Term(Term::Word(s)) if s.as_ref() == "z"),
             ],
         ),
     ];
@@ -151,8 +151,8 @@ fn regex_terms_participate_in_boolean_logic() {
     };
     assert_eq!(parts.len(), 2);
     assert!(matches!(&parts[0], Expr::Or(v)
-        if matches!(&v[0], Expr::Term(Term::Regex(p)) if p == "^Rep")
-        && matches!(&v[1], Expr::Term(Term::Word(s)) if s == "notes")
+        if matches!(&v[0], Expr::Term(Term::Regex(p)) if p.as_ref() == "^Rep")
+        && matches!(&v[1], Expr::Term(Term::Word(s)) if s.as_ref() == "notes")
     ));
     assert!(matches!(&parts[1], Expr::Term(Term::Filter(_))));
 }

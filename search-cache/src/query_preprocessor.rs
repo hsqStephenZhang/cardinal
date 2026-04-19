@@ -36,14 +36,14 @@ fn expand_expr(expr: Expr, home: &str) -> Expr {
 
 fn expand_term(term: Term, home: &str) -> Term {
     match term {
-        Term::Word(word) => Term::Word(expand_text_unquoted(word, home)),
+        Term::Word(word) => Term::Word(expand_text_unquoted(&word, home)),
         Term::Filter(filter) => Term::Filter(expand_filter(filter, home)),
         // Don't expand when ~ is quoted or in regex
         Term::Regex(pattern) => Term::Regex(pattern),
     }
 }
 
-fn expand_text_unquoted(value: String, home: &str) -> String {
+fn expand_text_unquoted(value: &str, home: &str) -> Box<str> {
     let mut result = String::with_capacity(value.len());
     let mut in_quotes = false;
     let mut chars = value.chars().peekable();
@@ -70,7 +70,7 @@ fn expand_text_unquoted(value: String, home: &str) -> String {
         }
     }
 
-    result
+    result.into_boxed_str()
 }
 
 pub(crate) fn strip_query_quotes(mut query: Query) -> Query {
@@ -90,13 +90,16 @@ fn strip_expr_quotes(expr: Expr) -> Expr {
 
 fn strip_term_quotes(term: Term) -> Term {
     match term {
-        Term::Word(word) => Term::Word(strip_query_quotes_text(&word)),
+        Term::Word(word) => Term::Word(strip_query_quotes_text(&word).into_boxed_str()),
         Term::Filter(mut filter) => {
             if let Some(arg) = &mut filter.argument {
-                arg.raw = strip_query_quotes_text(&arg.raw);
+                arg.raw = strip_query_quotes_text(&arg.raw).into_boxed_str();
                 // Also strip quotes from list values
                 if let ArgumentKind::List(values) = &mut arg.kind {
-                    *values = values.iter().map(|v| strip_query_quotes_text(v)).collect();
+                    *values = values
+                        .iter()
+                        .map(|v| strip_query_quotes_text(v).into_boxed_str())
+                        .collect();
                 }
             }
             Term::Filter(filter)
@@ -146,7 +149,7 @@ fn filter_requires_path(kind: &FilterKind) -> bool {
 
 fn expand_filter_argument(argument: &mut FilterArgument, home: &str) {
     let raw = std::mem::take(&mut argument.raw);
-    argument.raw = expand_text(raw, home);
+    argument.raw = expand_text(&raw, home);
     match &mut argument.kind {
         ArgumentKind::Bare | ArgumentKind::Phrase => {}
         ArgumentKind::List(values) => {
@@ -180,15 +183,15 @@ fn expand_comparison(value: &mut ComparisonValue, home: &str) {
     }
 }
 
-fn expand_text(value: String, home: &str) -> String {
-    if let Some(expanded) = expand_home_prefix(&value, home) {
+fn expand_text(value: &str, home: &str) -> Box<str> {
+    if let Some(expanded) = expand_home_prefix(value, home) {
         expanded
     } else {
-        value
+        value.into()
     }
 }
 
-fn expand_home_prefix(value: &str, home: &str) -> Option<String> {
+fn expand_home_prefix(value: &str, home: &str) -> Option<Box<str>> {
     // Support Unix `~/foo` and Windows-equivalent `~\foo` prefixes while
     // leaving other `~` usages (e.g., `~someone`) untouched.
     if !value.starts_with('~') {
@@ -196,7 +199,7 @@ fn expand_home_prefix(value: &str, home: &str) -> Option<String> {
     }
     let remainder = &value[1..];
     if remainder.is_empty() {
-        return Some(home.to_string());
+        return Some(home.into());
     }
     let mut chars = remainder.chars();
     match chars.next() {
@@ -204,7 +207,7 @@ fn expand_home_prefix(value: &str, home: &str) -> Option<String> {
             let mut expanded = String::with_capacity(home.len() + remainder.len());
             expanded.push_str(home);
             expanded.push_str(remainder);
-            Some(expanded)
+            Some(expanded.into_boxed_str())
         }
         _ => None,
     }
@@ -238,7 +241,7 @@ mod tests {
     fn expands_tilde_in_word_terms() {
         let query = expand("~/code", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "/Users/demo/code"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word.as_ref(), "/Users/demo/code"),
             other => panic!("Unexpected expr: {other:?}"),
         };
     }
@@ -247,7 +250,7 @@ mod tests {
     fn leaves_regular_terms_untouched() {
         let query = expand("docs", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "docs"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word.as_ref(), "docs"),
             other => panic!("Unexpected expr: {other:?}"),
         };
     }
@@ -256,7 +259,7 @@ mod tests {
     fn expands_word_with_only_tilde() {
         let query = expand("~", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "/Users/demo"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word.as_ref(), "/Users/demo"),
             other => panic!("Unexpected expr: {other:?}"),
         };
     }
@@ -268,7 +271,7 @@ mod tests {
             Expr::Term(Term::Filter(filter)) => {
                 assert!(matches!(filter.kind, FilterKind::InFolder));
                 let argument = filter.argument.expect("argument");
-                assert_eq!(argument.raw, "/Users/demo/projects");
+                assert_eq!(argument.raw.as_ref(), "/Users/demo/projects");
             }
             other => panic!("Unexpected expr: {other:?}"),
         };
@@ -281,7 +284,7 @@ mod tests {
             Expr::Term(Term::Filter(filter)) => {
                 assert!(matches!(filter.kind, FilterKind::Ext));
                 let argument = filter.argument.expect("argument");
-                assert_eq!(argument.raw, "~");
+                assert_eq!(argument.raw.as_ref(), "~");
             }
             other => panic!("Unexpected expr: {other:?}"),
         };
@@ -294,7 +297,7 @@ mod tests {
             Expr::Or(parts) => {
                 assert_eq!(parts.len(), 2);
                 match &parts[0] {
-                    Expr::Term(Term::Word(word)) => assert_eq!(word, "/Users/demo/docs"),
+                    Expr::Term(Term::Word(word)) => assert_eq!(&**word, "/Users/demo/docs"),
                     other => panic!("Unexpected left expr: {other:?}"),
                 }
                 match &parts[1] {
@@ -302,7 +305,7 @@ mod tests {
                         Expr::Term(Term::Filter(filter)) => {
                             assert!(matches!(filter.kind, FilterKind::Parent));
                             let argument = filter.argument.clone().expect("argument");
-                            assert_eq!(argument.raw, "/Users/demo/Downloads");
+                            assert_eq!(argument.raw.as_ref(), "/Users/demo/Downloads");
                         }
                         other => panic!("Unexpected NOT target: {other:?}"),
                     },
@@ -317,13 +320,13 @@ mod tests {
     fn does_not_expand_phrases_or_regexes() {
         let phrase = expand("\"~/docs\"", "/Users/demo");
         match phrase.expr {
-            Expr::Term(Term::Word(text)) => assert_eq!(text, "\"~/docs\""),
+            Expr::Term(Term::Word(text)) => assert_eq!(text.as_ref(), "\"~/docs\""),
             other => panic!("Unexpected expr: {other:?}"),
         }
 
         let regex = expand("regex:^~/docs$", "/Users/demo");
         match regex.expr {
-            Expr::Term(Term::Regex(pattern)) => assert_eq!(pattern, "^~/docs$"),
+            Expr::Term(Term::Regex(pattern)) => assert_eq!(pattern.as_ref(), "^~/docs$"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -332,19 +335,19 @@ mod tests {
     fn expands_only_unquoted_leading_tilde() {
         let query = expand("\"\"~/docs", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"\"/Users/demo/docs"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word.as_ref(), "\"\"/Users/demo/docs"),
             other => panic!("Unexpected expr: {other:?}"),
         }
 
         let query = expand("\"foo\"~/docs", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"foo\"/Users/demo/docs"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word.as_ref(), "\"foo\"/Users/demo/docs"),
             other => panic!("Unexpected expr: {other:?}"),
         }
 
         let query = expand("foo~/docs", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "foo/Users/demo/docs"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word.as_ref(), "foo/Users/demo/docs"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -358,11 +361,8 @@ mod tests {
                 match argument.kind {
                     ArgumentKind::List(values) => {
                         assert_eq!(
-                            values,
-                            vec![
-                                String::from("/Users/demo/src"),
-                                String::from("/Users/demo/lib"),
-                            ]
+                            values.iter().map(|s| s.as_ref()).collect::<Vec<&str>>(),
+                            ["/Users/demo/src", "/Users/demo/lib"]
                         );
                     }
                     other => panic!("Expected list argument, got {other:?}"),
@@ -404,7 +404,7 @@ mod tests {
                 let argument = filter.argument.expect("argument");
                 match argument.kind {
                     ArgumentKind::Comparison(value) => {
-                        assert_eq!(value.value, "/Users/demo/docs");
+                        assert_eq!(value.value.as_ref(), "/Users/demo/docs");
                     }
                     other => panic!("Expected comparison argument, got {other:?}"),
                 }
@@ -419,7 +419,7 @@ mod tests {
         match query.expr {
             Expr::Term(Term::Filter(filter)) => {
                 let argument = filter.argument.expect("argument");
-                assert_eq!(argument.raw, r"C:\\Users\\demo\\Downloads");
+                assert_eq!(argument.raw.as_ref(), r"C:\\Users\\demo\\Downloads");
             }
             other => panic!("Unexpected expr: {other:?}"),
         };
@@ -431,7 +431,7 @@ mod tests {
         match query.expr {
             Expr::Term(Term::Filter(filter)) => {
                 let argument = filter.argument.expect("argument");
-                assert_eq!(argument.raw, "~shared/docs");
+                assert_eq!(argument.raw.as_ref(), "~shared/docs");
             }
             other => panic!("Unexpected expr: {other:?}"),
         };
@@ -441,7 +441,7 @@ mod tests {
     fn expands_tilde_after_multiple_empty_quotes() {
         let query = expand("\"\"\"\"~/docs", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"\"\"\"/Users/demo/docs"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "\"\"\"\"/Users/demo/docs"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -450,7 +450,7 @@ mod tests {
     fn does_not_expand_tilde_in_quoted_section() {
         let query = expand("\"~/docs\"foo", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"~/docs\"foo"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "\"~/docs\"foo"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -459,7 +459,7 @@ mod tests {
     fn expands_tilde_after_closing_quote() {
         let query = expand("\"prefix\"~/docs", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"prefix\"/Users/demo/docs"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "\"prefix\"/Users/demo/docs"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -469,7 +469,7 @@ mod tests {
         // Matched quote pairs before tilde
         let query = expand("\"x\"\"y\"~/docs", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"x\"\"y\"/Users/demo/docs"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "\"x\"\"y\"/Users/demo/docs"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -478,7 +478,7 @@ mod tests {
     fn handles_multiple_tildes_in_value() {
         let query = expand("~/foo/~/bar", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "/Users/demo/foo//Users/demo/bar"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "/Users/demo/foo//Users/demo/bar"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -487,7 +487,7 @@ mod tests {
     fn handles_tilde_not_at_start() {
         let query = expand("prefix~/docs", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "prefix/Users/demo/docs"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "prefix/Users/demo/docs"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -496,7 +496,7 @@ mod tests {
     fn expands_tilde_with_backslash_on_unix() {
         let query = expand(r"~\docs", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, r"/Users/demo\docs"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, r"/Users/demo\docs"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -511,7 +511,7 @@ mod tests {
     fn handles_tilde_with_special_characters_after() {
         let query = expand("~+docs", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "~+docs"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "~+docs"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -523,11 +523,11 @@ mod tests {
             Expr::And(parts) => {
                 assert_eq!(parts.len(), 2);
                 match &parts[0] {
-                    Expr::Term(Term::Word(word)) => assert_eq!(word, "/Users/demo/docs"),
+                    Expr::Term(Term::Word(word)) => assert_eq!(&**word, "/Users/demo/docs"),
                     other => panic!("Expected expanded word, got {other:?}"),
                 }
                 match &parts[1] {
-                    Expr::Term(Term::Word(word)) => assert_eq!(word, "\"~/quoted\""),
+                    Expr::Term(Term::Word(word)) => assert_eq!(&**word, "\"~/quoted\""),
                     other => panic!("Expected quoted word, got {other:?}"),
                 }
             }
@@ -540,7 +540,7 @@ mod tests {
         // Quote open-close-open-close before tilde
         let query = expand("\"a\"\"b\"~/docs", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"a\"\"b\"/Users/demo/docs"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "\"a\"\"b\"/Users/demo/docs"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -604,9 +604,9 @@ mod tests {
                         assert_eq!(
                             values,
                             vec![
-                                String::from("/Users/demo/src"),
-                                String::from("regular"),
-                                String::from("/Users/demo/lib"),
+                                String::from("/Users/demo/src").into_boxed_str(),
+                                String::from("regular").into_boxed_str(),
+                                String::from("/Users/demo/lib").into_boxed_str(),
                             ]
                         );
                     }
@@ -627,7 +627,10 @@ mod tests {
                     ArgumentKind::List(values) => {
                         assert_eq!(
                             values,
-                            vec![String::from("/Users/demo"), String::from("foo")]
+                            vec![
+                                "/Users/demo".to_string().into_boxed_str(),
+                                "foo".to_string().into_boxed_str()
+                            ]
                         );
                     }
                     other => panic!("Expected list argument, got {other:?}"),
@@ -644,7 +647,7 @@ mod tests {
             Expr::Term(Term::Filter(filter)) => {
                 assert!(matches!(filter.kind, FilterKind::NoSubfolders));
                 let argument = filter.argument.expect("argument");
-                assert_eq!(argument.raw, "/Users/demo/work");
+                assert_eq!(argument.raw.as_ref(), "/Users/demo/work");
             }
             other => panic!("Unexpected expr: {other:?}"),
         }
@@ -670,7 +673,7 @@ mod tests {
             }),
         };
         let filter = expand_filter_term(filter, "/Users/demo");
-        assert_eq!(filter.argument.expect("argument").raw, "/Users/demo/docs");
+        assert_eq!(&*filter.argument.expect("argument").raw, "/Users/demo/docs");
     }
 
     #[test]
@@ -684,7 +687,7 @@ mod tests {
         };
         let filter = expand_filter_term(filter, "/Users/demo");
         assert_eq!(
-            filter.argument.expect("argument").raw,
+            &*filter.argument.expect("argument").raw,
             "/Users/demo/my documents"
         );
     }
@@ -694,7 +697,7 @@ mod tests {
         let query = parse_query("\"hello\"").expect("valid");
         let stripped = strip_query_quotes(query);
         match stripped.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "hello"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "hello"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -707,11 +710,11 @@ mod tests {
             Expr::And(parts) => {
                 assert_eq!(parts.len(), 2);
                 match &parts[0] {
-                    Expr::Term(Term::Word(word)) => assert_eq!(word, "hello"),
+                    Expr::Term(Term::Word(word)) => assert_eq!(&**word, "hello"),
                     other => panic!("Unexpected first term: {other:?}"),
                 }
                 match &parts[1] {
-                    Expr::Term(Term::Word(word)) => assert_eq!(word, "world"),
+                    Expr::Term(Term::Word(word)) => assert_eq!(&**word, "world"),
                     other => panic!("Unexpected second term: {other:?}"),
                 }
             }
@@ -734,7 +737,7 @@ mod tests {
         let query = parse_query("regex:\"test\"").expect("valid");
         let stripped = strip_query_quotes(query);
         match stripped.expr {
-            Expr::Term(Term::Regex(pattern)) => assert_eq!(pattern, "test"),
+            Expr::Term(Term::Regex(pattern)) => assert_eq!(&*pattern, "test"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -747,12 +750,12 @@ mod tests {
             Expr::Or(parts) => {
                 assert_eq!(parts.len(), 2);
                 match &parts[0] {
-                    Expr::Term(Term::Word(word)) => assert_eq!(word, "a"),
+                    Expr::Term(Term::Word(word)) => assert_eq!(&**word, "a"),
                     other => panic!("Unexpected left term: {other:?}"),
                 }
                 match &parts[1] {
                     Expr::Not(inner) => match inner.as_ref() {
-                        Expr::Term(Term::Word(word)) => assert_eq!(word, "b"),
+                        Expr::Term(Term::Word(word)) => assert_eq!(&**word, "b"),
                         other => panic!("Unexpected NOT target: {other:?}"),
                     },
                     other => panic!("Unexpected right expr: {other:?}"),
@@ -767,7 +770,7 @@ mod tests {
         let query = parse_query("\"a\"").expect("valid");
         let stripped = strip_query_quotes(query);
         match stripped.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "a"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "a"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -777,7 +780,7 @@ mod tests {
         let query = parse_query("\"hello\"\"world\"").expect("valid");
         let stripped = strip_query_quotes(query);
         match stripped.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "helloworld"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "helloworld"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -787,7 +790,7 @@ mod tests {
         let query = parse_query(r#"\"hello\""#).expect("valid");
         let stripped = strip_query_quotes(query);
         match stripped.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"hello\""),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "\"hello\""),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -797,7 +800,7 @@ mod tests {
         let query = parse_query(r#""C:\\path""#).expect("valid");
         let stripped = strip_query_quotes(query);
         match stripped.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, r"C:\path"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, r"C:\path"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -807,7 +810,7 @@ mod tests {
         let query = parse_query(r#""foo\"bar\"baz""#).expect("valid");
         let stripped = strip_query_quotes(query);
         match stripped.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "foo\"bar\"baz"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "foo\"bar\"baz"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -817,7 +820,7 @@ mod tests {
         let query = parse_query(r#""a\bc""#).expect("valid");
         let stripped = strip_query_quotes(query);
         match stripped.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "a\\bc"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "a\\bc"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -827,7 +830,7 @@ mod tests {
         let query = parse_query(r#""C\\\\path""#).expect("valid");
         let stripped = strip_query_quotes(query);
         match stripped.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "C\\\\path"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "C\\\\path"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -848,7 +851,7 @@ mod tests {
         match stripped.expr {
             Expr::Term(Term::Filter(filter)) => {
                 let arg = filter.argument.expect("argument");
-                assert_eq!(arg.raw, "C\\Users\\demo".replace("\\\\", "\\"));
+                assert_eq!(&*arg.raw, "C\\Users\\demo".replace("\\\\", "\\"));
             }
             other => panic!("Unexpected expr: {other:?}"),
         }
@@ -870,7 +873,7 @@ mod tests {
         match stripped.expr {
             Expr::Term(Term::Filter(filter)) => {
                 let arg = filter.argument.expect("argument");
-                assert_eq!(arg.raw, "C\\Users\\demo Documents".replace("\\\\", "\\"));
+                assert_eq!(&*arg.raw, "C\\Users\\demo Documents".replace("\\\\", "\\"));
             }
             other => panic!("Unexpected expr: {other:?}"),
         }
@@ -881,7 +884,7 @@ mod tests {
         let filter = Filter {
             kind: FilterKind::InFolder,
             argument: Some(FilterArgument {
-                raw: String::new(),
+                raw: "".into(),
                 kind: ArgumentKind::List(vec![r#""C\\path""#.into(), r#""D\\data""#.into()]),
             }),
         };
@@ -895,11 +898,14 @@ mod tests {
                 match arg.kind {
                     ArgumentKind::List(values) => {
                         assert_eq!(
-                            values,
-                            vec![
+                            values.iter().map(|s| &**s).collect::<Vec<&str>>(),
+                            [
                                 "C\\path".replace("\\\\", "\\"),
                                 "D\\data".replace("\\\\", "\\"),
                             ]
+                            .iter()
+                            .map(|s| s.as_str())
+                            .collect::<Vec<&str>>()
                         );
                     }
                     other => panic!("Expected list argument, got {other:?}"),
@@ -916,7 +922,7 @@ mod tests {
         // "~" should not expand
         let query = expand("\"~\"", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"~\""),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "\"~\""),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -926,7 +932,7 @@ mod tests {
         // "~/docs" should not expand
         let query = expand("\"~/docs\"", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"~/docs\""),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "\"~/docs\""),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -936,7 +942,7 @@ mod tests {
         // ~"docs" - tilde at start but followed by quote (not / or \), won't expand
         let query = expand("~\"docs\"", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "~\"docs\""),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "~\"docs\""),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -946,7 +952,7 @@ mod tests {
         // "prefix~" - tilde inside quotes but not at start should not expand
         let query = expand("\"prefix~\"", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"prefix~\""),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "\"prefix~\""),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -956,7 +962,7 @@ mod tests {
         // "prefix~/docs" - tilde not at word start inside quotes
         let query = expand("\"prefix~/docs\"", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"prefix~/docs\""),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "\"prefix~/docs\""),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -966,7 +972,7 @@ mod tests {
         // prefix"~"suffix - tilde inside quotes with content on both sides
         let query = expand("prefix\"~\"suffix", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "prefix\"~\"suffix"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "prefix\"~\"suffix"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -976,7 +982,7 @@ mod tests {
         // "~"suffix - quoted tilde followed by unquoted content
         let query = expand("\"~\"suffix", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"~\"suffix"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "\"~\"suffix"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -986,7 +992,7 @@ mod tests {
         // "~/docs"rest - quoted tilde path followed by unquoted content
         let query = expand("\"~/docs\"rest", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"~/docs\"rest"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "\"~/docs\"rest"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -996,7 +1002,7 @@ mod tests {
         // ~/docs"suffix" - tilde expands, then quoted content follows
         let query = expand("~/docs\"suffix\"", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "/Users/demo/docs\"suffix\""),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "/Users/demo/docs\"suffix\""),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -1006,7 +1012,7 @@ mod tests {
         // "~/"suffix - quoted tilde with slash, then unquoted
         let query = expand("\"~/\"suffix", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"~/\"suffix"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "\"~/\"suffix"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -1016,7 +1022,7 @@ mod tests {
         // "a"~"b" - tilde not followed by / or \, won't expand
         let query = expand("\"a\"~\"b\"", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"a\"~\"b\""),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "\"a\"~\"b\""),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -1026,7 +1032,7 @@ mod tests {
         // "a"~/docs"b" - tilde after quotes followed by /, should expand
         let query = expand("\"a\"~/docs\"b\"", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"a\"/Users/demo/docs\"b\""),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "\"a\"/Users/demo/docs\"b\""),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -1036,7 +1042,7 @@ mod tests {
         // ~"test"~/docs - first tilde not followed by /, second tilde (after quotes) should expand
         let query = expand("~\"test\"~/docs", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "~\"test\"/Users/demo/docs"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "~\"test\"/Users/demo/docs"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -1046,7 +1052,7 @@ mod tests {
         // a"~/docs" - regular char, then quoted tilde path
         let query = expand("a\"~/docs\"", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "a\"~/docs\""),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "a\"~/docs\""),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -1056,7 +1062,7 @@ mod tests {
         // ""~"" - tilde not followed by / or \, won't expand
         let query = expand("\"\"~\"\"", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"\"~\"\""),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "\"\"~\"\""),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -1066,7 +1072,7 @@ mod tests {
         // "prefix"~ - tilde alone after quotes, should expand to home
         let query = expand("\"prefix\"~", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"prefix\"/Users/demo"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "\"prefix\"/Users/demo"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -1076,7 +1082,7 @@ mod tests {
         // "a"~"b"~/c"d" - first unquoted ~ not followed by /, second is, expand second
         let query = expand("\"a\"~\"b\"~/c\"d\"", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"a\"~\"b\"/Users/demo/c\"d\""),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "\"a\"~\"b\"/Users/demo/c\"d\""),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -1086,7 +1092,7 @@ mod tests {
         // "~\docs" - tilde with backslash inside quotes
         let query = expand("\"~\\docs\"", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"~\\docs\""),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "\"~\\docs\""),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -1097,7 +1103,7 @@ mod tests {
         // "a"b~/c - quote closes after 'a', 'b' is unquoted before tilde, should expand
         let query = expand("\"a\"b~/c", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"a\"b/Users/demo/c"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "\"a\"b/Users/demo/c"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -1107,7 +1113,7 @@ mod tests {
         // ~/docs - standard case, should expand
         let query = expand("~/docs", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "/Users/demo/docs"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "/Users/demo/docs"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -1117,7 +1123,7 @@ mod tests {
         // ~\docs - backslash variant, should expand
         let query = expand(r"~\docs", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, r"/Users/demo\docs"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, r"/Users/demo\docs"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -1127,7 +1133,7 @@ mod tests {
         // ""~/docs - empty quotes at start, then tilde with slash
         let query = expand("\"\"~/docs", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"\"/Users/demo/docs"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "\"\"/Users/demo/docs"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -1137,7 +1143,7 @@ mod tests {
         // ~ - just tilde alone
         let query = expand("~", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "/Users/demo"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "/Users/demo"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -1147,7 +1153,7 @@ mod tests {
         // ""~x - empty quotes then tilde not followed by / or \
         let query = expand("\"\"~x", "/Users/demo");
         match query.expr {
-            Expr::Term(Term::Word(word)) => assert_eq!(word, "\"\"~x"),
+            Expr::Term(Term::Word(word)) => assert_eq!(&*word, "\"\"~x"),
             other => panic!("Unexpected expr: {other:?}"),
         }
     }
@@ -1158,7 +1164,7 @@ mod tests {
         let query = expand("~/a/~/b/~/c", "/Users/demo");
         match query.expr {
             Expr::Term(Term::Word(word)) => {
-                assert_eq!(word, "/Users/demo/a//Users/demo/b//Users/demo/c")
+                assert_eq!(&*word, "/Users/demo/a//Users/demo/b//Users/demo/c")
             }
             other => panic!("Unexpected expr: {other:?}"),
         }
@@ -1170,7 +1176,7 @@ mod tests {
         let query = expand("~/a/\"~/b\"/~/c", "/Users/demo");
         match query.expr {
             Expr::Term(Term::Word(word)) => {
-                assert_eq!(word, "/Users/demo/a/\"~/b\"//Users/demo/c")
+                assert_eq!(&*word, "/Users/demo/a/\"~/b\"//Users/demo/c")
             }
             other => panic!("Unexpected expr: {other:?}"),
         }
@@ -1182,7 +1188,7 @@ mod tests {
         let query = expand("~/a/~x/~/b", "/Users/demo");
         match query.expr {
             Expr::Term(Term::Word(word)) => {
-                assert_eq!(word, "/Users/demo/a/~x//Users/demo/b")
+                assert_eq!(&*word, "/Users/demo/a/~x//Users/demo/b")
             }
             other => panic!("Unexpected expr: {other:?}"),
         }

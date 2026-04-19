@@ -509,11 +509,14 @@ fn ext_filter_semicolon_inside_quotes() {
 fn custom_filter_semicolon_inside_quotes() {
     // proj:"a;b";c → custom filter should have same behavior
     if let Expr::Term(Term::Filter(filter)) = parse_raw(r#"proj:"a;b";c"#) {
-        assert!(matches!(filter.kind, FilterKind::Custom(ref name) if name == "proj"));
+        assert!(matches!(filter.kind, FilterKind::Custom(ref name) if name.as_ref() == "proj"));
         let arg = filter.argument.unwrap();
         match arg.kind {
             ArgumentKind::List(values) => {
-                assert_eq!(values, vec![r#""a;b""#, "c"]);
+                assert_eq!(
+                    values.iter().map(|s| s.as_ref()).collect::<Vec<&str>>(),
+                    [r#""a;b""#, "c"]
+                );
             }
             _ => panic!("Expected list argument"),
         }

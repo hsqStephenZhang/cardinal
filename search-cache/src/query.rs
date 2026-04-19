@@ -529,7 +529,7 @@ impl SearchCache {
         base: Option<Vec<SlabIndex>>,
         token: CancellationToken,
     ) -> Result<Option<Vec<SlabIndex>>> {
-        let Some(target) = self.node_index_for_path(Path::new(&argument.raw)) else {
+        let Some(target) = self.node_index_for_path(Path::new(argument.raw.as_ref())) else {
             bail!(
                 "Parent filter {:?} is not found in file system",
                 argument.raw
@@ -552,7 +552,7 @@ impl SearchCache {
         base: Option<Vec<SlabIndex>>,
         token: CancellationToken,
     ) -> Result<Option<Vec<SlabIndex>>> {
-        let Some(target) = self.node_index_for_path(Path::new(&argument.raw)) else {
+        let Some(target) = self.node_index_for_path(Path::new(argument.raw.as_ref())) else {
             bail!(
                 "Parent filter {:?} is not found in file system",
                 argument.raw
@@ -577,7 +577,7 @@ impl SearchCache {
         base: Option<Vec<SlabIndex>>,
         token: CancellationToken,
     ) -> Result<Option<Vec<SlabIndex>>> {
-        let Some(target) = self.node_index_for_path(Path::new(&argument.raw)) else {
+        let Some(target) = self.node_index_for_path(Path::new(argument.raw.as_ref())) else {
             bail!(
                 "nosubfolders filter {:?} is not found in file system",
                 argument.raw

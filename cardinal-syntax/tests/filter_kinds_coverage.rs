@@ -70,13 +70,13 @@ fn maps_known_filter_names() {
 fn preserves_custom_names() {
     let f = parse_filter("proj", None);
     match f.kind {
-        FilterKind::Custom(n) => assert_eq!(n, "proj"),
+        FilterKind::Custom(n) => assert_eq!(&*n, "proj"),
         other => panic!("{other:?}"),
     }
 
     let f = parse_filter("D", None);
     match f.kind {
-        FilterKind::Custom(n) => assert_eq!(n, "D"),
+        FilterKind::Custom(n) => assert_eq!(&*n, "D"),
         other => panic!("{other:?}"),
     }
 }

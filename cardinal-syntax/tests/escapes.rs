@@ -8,7 +8,7 @@ use common::*;
 fn single_escaped_quote() {
     let expr = parse_ok("\\\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\\\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\\\""),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -17,7 +17,7 @@ fn single_escaped_quote() {
 fn double_escaped_quote() {
     let expr = parse_ok("\\\"\\\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\\\"\\\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\\\"\\\""),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -26,7 +26,7 @@ fn double_escaped_quote() {
 fn escaped_quote_in_phrase() {
     let expr = parse_ok("\"\\\"\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\"\\\"\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\"\\\"\""),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -35,7 +35,7 @@ fn escaped_quote_in_phrase() {
 fn phrase_with_escaped_quote_at_start() {
     let expr = parse_ok("\"\\\"hello\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\"\\\"hello\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\"\\\"hello\""),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -44,7 +44,7 @@ fn phrase_with_escaped_quote_at_start() {
 fn phrase_with_escaped_quote_at_end() {
     let expr = parse_ok("\"hello\\\"\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\"hello\\\"\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\"hello\\\"\""),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -53,7 +53,7 @@ fn phrase_with_escaped_quote_at_end() {
 fn phrase_with_escaped_quote_in_middle() {
     let expr = parse_ok("\"hello\\\"world\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\"hello\\\"world\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\"hello\\\"world\""),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -62,7 +62,7 @@ fn phrase_with_escaped_quote_in_middle() {
 fn phrase_with_multiple_escaped_quotes() {
     let expr = parse_ok("\"a\\\"b\\\"c\\\"d\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\"a\\\"b\\\"c\\\"d\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\"a\\\"b\\\"c\\\"d\""),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -71,7 +71,7 @@ fn phrase_with_multiple_escaped_quotes() {
 fn phrase_with_consecutive_escaped_quotes() {
     let expr = parse_ok("\"\\\"\\\"\\\"\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\"\\\"\\\"\\\"\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\"\\\"\\\"\\\"\""),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -80,7 +80,7 @@ fn phrase_with_consecutive_escaped_quotes() {
 fn phrase_with_backslash_and_escaped_quote() {
     let expr = parse_ok("\"\\\\\\\"\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\"\\\\\\\"\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\"\\\\\\\"\""),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -89,7 +89,7 @@ fn phrase_with_backslash_and_escaped_quote() {
 fn phrase_with_regular_backslash() {
     let expr = parse_ok("\"C:\\\\Users\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\"C:\\\\Users\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\"C:\\\\Users\""),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -98,7 +98,7 @@ fn phrase_with_regular_backslash() {
 fn phrase_with_mixed_backslashes() {
     let expr = parse_ok("\"C:\\\\Path\\\"Name\\\"\\\\file.txt\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\"C:\\\\Path\\\"Name\\\"\\\\file.txt\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\"C:\\\\Path\\\"Name\\\"\\\\file.txt\""),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -107,7 +107,7 @@ fn phrase_with_mixed_backslashes() {
 fn word_with_escaped_quote() {
     let expr = parse_ok("word\\\"part");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "word\\\"part"),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "word\\\"part"),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -116,7 +116,7 @@ fn word_with_escaped_quote() {
 fn word_starting_with_escaped_quote() {
     let expr = parse_ok("\\\"word");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\\\"word"),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\\\"word"),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -125,7 +125,7 @@ fn word_starting_with_escaped_quote() {
 fn word_ending_with_escaped_quote() {
     let expr = parse_ok("word\\\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "word\\\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "word\\\""),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -222,7 +222,7 @@ fn complex_query_with_escaped_quotes() {
     // 优化器重排过滤器到前面
     match &and_parts[0] {
         Expr::Not(inner) => match &**inner {
-            Expr::Term(Term::Word(w)) => assert_eq!(w, "\"exclude\\\"3\""),
+            Expr::Term(Term::Word(w)) => assert_eq!(w.as_ref(), "\"exclude\\\"3\""),
             other => panic!("unexpected: {other:?}"),
         },
         other => panic!("expected Not, got: {other:?}"),
@@ -234,7 +234,7 @@ fn complex_query_with_escaped_quotes() {
 fn escaped_quote_with_unicode_chars() {
     let expr = parse_ok("\"你好\\\"世界\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\"你好\\\"世界\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\"你好\\\"世界\""),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -243,7 +243,7 @@ fn escaped_quote_with_unicode_chars() {
 fn escaped_quote_with_emoji() {
     let expr = parse_ok("\"test\\\"😀\\\"value\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\"test\\\"😀\\\"value\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\"test\\\"😀\\\"value\""),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -262,7 +262,7 @@ fn escaped_quote_preserves_in_optimization() {
 fn mixed_escape_patterns() {
     let expr = parse_ok("\"a\\b\\\"c\\\\d\\\"e\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\"a\\b\\\"c\\\\d\\\"e\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\"a\\b\\\"c\\\\d\\\"e\""),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -271,7 +271,7 @@ fn mixed_escape_patterns() {
 fn trailing_backslash_in_quoted_phrase() {
     let expr = parse_ok("\"trailing\\\\\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\"trailing\\\\\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\"trailing\\\\\""),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -280,7 +280,7 @@ fn trailing_backslash_in_quoted_phrase() {
 fn leading_backslash_in_quoted_phrase() {
     let expr = parse_ok("\"\\\\leading\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\"\\\\leading\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\"\\\\leading\""),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -289,7 +289,7 @@ fn leading_backslash_in_quoted_phrase() {
 fn only_backslashes_in_phrase() {
     let expr = parse_ok("\"\\\\\\\\\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\"\\\\\\\\\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\"\\\\\\\\\""),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -298,7 +298,7 @@ fn only_backslashes_in_phrase() {
 fn alternating_backslash_and_escaped_quotes() {
     let expr = parse_ok("\"\\\\\\\"\\\\\\\"\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\"\\\\\\\"\\\\\\\"\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\"\\\\\\\"\\\\\\\"\""),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -307,7 +307,7 @@ fn alternating_backslash_and_escaped_quotes() {
 fn escaped_quote_between_regular_quotes() {
     let expr = parse_ok("\"start\"middle\\\"\"end\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\"start\"middle\\\"\"end\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\"start\"middle\\\"\"end\""),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -327,7 +327,7 @@ fn multiple_filters_with_escaped_quotes() {
 fn escaped_quote_with_wildcard() {
     let expr = parse_ok("\"*.txt\\\"backup\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\"*.txt\\\"backup\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\"*.txt\\\"backup\""),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -336,7 +336,7 @@ fn escaped_quote_with_wildcard() {
 fn escaped_quote_in_regex() {
     let expr = parse_ok("regex:\"test\\\"[0-9]+\"");
     match expr {
-        Expr::Term(Term::Regex(r)) => assert_eq!(r, "test\\\"[0-9]+"),
+        Expr::Term(Term::Regex(r)) => assert_eq!(&*r, "test\\\"[0-9]+"),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -388,7 +388,7 @@ fn size_filter_with_escaped_quotes() {
 fn empty_quotes_after_escaped_quote() {
     let expr = parse_ok("\\\"\"\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\\\"\"\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\\\"\"\""),
         other => panic!("unexpected: {other:?}"),
     }
 }
@@ -397,7 +397,7 @@ fn empty_quotes_after_escaped_quote() {
 fn empty_quotes_before_escaped_quote() {
     let expr = parse_ok("\"\"\\\"");
     match expr {
-        Expr::Term(Term::Word(w)) => assert_eq!(w, "\"\"\\\""),
+        Expr::Term(Term::Word(w)) => assert_eq!(&*w, "\"\"\\\""),
         other => panic!("unexpected: {other:?}"),
     }
 }

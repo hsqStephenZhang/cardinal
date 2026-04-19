@@ -42,8 +42,8 @@ impl HighlightCollector {
 
     fn collect_argument(&mut self, argument: &FilterArgument) {
         match &argument.kind {
-            ArgumentKind::Bare => self.collect_text(argument.raw.as_str()),
-            ArgumentKind::Phrase => self.collect_literal_text(argument.raw.as_str()),
+            ArgumentKind::Bare => self.collect_text(&argument.raw),
+            ArgumentKind::Phrase => self.collect_literal_text(&argument.raw),
             ArgumentKind::List(values) => {
                 for value in values {
                     if value.contains('"') {

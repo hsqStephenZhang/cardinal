@@ -217,9 +217,9 @@ pub enum Term {
     /// ```
     /// use cardinal_syntax::{parse_query, Expr, Term};
     /// let Expr::Term(Term::Word(word)) = parse_query("*.mp3").unwrap().expr else { panic!() };
-    /// assert_eq!(word, "*.mp3");
+    /// assert_eq!(&*word, "*.mp3");
     /// ```
-    Word(String),
+    Word(Box<str>),
     /// `name:argument` style filters (`size:>1GB`, `folder:` ...).
     ///
     /// ```
@@ -234,9 +234,9 @@ pub enum Term {
     /// ```
     /// use cardinal_syntax::{parse_query, Expr, Term};
     /// let Expr::Term(Term::Regex(pattern)) = parse_query("regex:^Report").unwrap().expr else { panic!() };
-    /// assert_eq!(pattern, "^Report");
+    /// assert_eq!(&*pattern, "^Report");
     /// ```
-    Regex(String),
+    Regex(Box<str>),
 }
 
 /// `name:argument` style filters Everything exposes (e.g. `size:>1gb`).
@@ -527,9 +527,9 @@ pub enum FilterKind {
     /// ```
     /// use cardinal_syntax::{parse_query, Expr, Term, FilterKind};
     /// let Expr::Term(Term::Filter(filter)) = parse_query("proj:").unwrap().expr else { panic!() };
-    /// assert!(matches!(filter.kind, FilterKind::Custom(name) if name == "proj"));
+    /// assert!(matches!(filter.kind, FilterKind::Custom(ref name) if name.as_ref() == "proj"));
     /// ```
-    Custom(String),
+    Custom(Box<str>),
 }
 
 impl FilterKind {
@@ -575,7 +575,7 @@ impl FilterKind {
             "tag" | "t" => FilterKind::Tag,
             "content" => FilterKind::Content,
             "nowholefilename" => FilterKind::NoWholeFilename,
-            _ => FilterKind::Custom(name.to_string()),
+            _ => FilterKind::Custom(name.into()),
         }
     }
 }
@@ -585,7 +585,7 @@ impl FilterKind {
 /// (`size:>1GB`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FilterArgument {
-    pub raw: String,
+    pub raw: Box<str>,
     pub kind: ArgumentKind,
 }
 
@@ -613,9 +613,9 @@ pub enum ArgumentKind {
     /// ```
     /// use cardinal_syntax::{parse_query, Expr, Term, ArgumentKind};
     /// let Expr::Term(Term::Filter(filter)) = parse_query("ext:jpg;png").unwrap().expr else { panic!() };
-    /// assert!(matches!(filter.argument.unwrap().kind, ArgumentKind::List(values) if values == ["jpg", "png"]));
+    /// assert!(matches!(filter.argument.unwrap().kind, ArgumentKind::List(values) if values.iter().map(|s| s.as_ref()).eq(["jpg", "png"])));
     /// ```
-    List(Vec<String>),
+    List(Vec<Box<str>>),
     /// Numeric/date range (dotted or hyphenated).
     ///
     /// ```
@@ -638,8 +638,8 @@ pub enum ArgumentKind {
 /// for open ranges (Everything treats `..10mb` as `<=10mb`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RangeValue {
-    pub start: Option<String>,
-    pub end: Option<String>,
+    pub start: Option<Box<str>>,
+    pub end: Option<Box<str>>,
     pub separator: RangeSeparator,
 }
 
@@ -669,7 +669,7 @@ pub enum RangeSeparator {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComparisonValue {
     pub op: ComparisonOp,
-    pub value: String,
+    pub value: Box<str>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -732,7 +732,7 @@ pub enum ComparisonOp {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
-    pub message: String,
+    pub message: Box<str>,
     pub position: usize,
 }
 
@@ -885,7 +885,7 @@ impl<'a> Parser<'a> {
             _ => {
                 let term = self.parse_word_like()?;
                 match &term {
-                    Term::Word(text) if text == "\"\"" => Ok(Expr::Empty),
+                    Term::Word(text) if text.as_ref() == "\"\"" => Ok(Expr::Empty),
                     _ => Ok(Expr::Term(term)),
                 }
             }
@@ -964,7 +964,7 @@ impl<'a> Parser<'a> {
             return Err(self.error("expected term"));
         }
 
-        let text = self.input[start..self.pos].to_string();
+        let text = self.input[start..self.pos].into();
         Ok(Term::Word(text))
     }
 
@@ -981,14 +981,14 @@ impl<'a> Parser<'a> {
         Ok(Term::Filter(Filter { kind, argument }))
     }
 
-    fn parse_regex_pattern(&mut self) -> Result<String, ParseError> {
+    fn parse_regex_pattern(&mut self) -> Result<Box<str>, ParseError> {
         self.skip_ws();
         if self.eof() || self.is_at_group_close() {
             return Err(self.error("regex: requires a pattern"));
         }
 
         if self.peek_char() == Some('"') {
-            return self.parse_phrase_string();
+            return self.parse_phrase_string().map(|s| s.into_boxed_str());
         }
 
         let mut pattern = String::new();
@@ -1033,7 +1033,7 @@ impl<'a> Parser<'a> {
             return Err(self.error("regex: requires a pattern"));
         }
 
-        Ok(pattern)
+        Ok(pattern.into_boxed_str())
     }
 
     // Extracts the argument immediately following `name:`. This function is
@@ -1114,7 +1114,7 @@ impl<'a> Parser<'a> {
 
         let argument_kind = classify_argument(kind, &buffer, is_quoted);
         Ok(Some(FilterArgument {
-            raw: buffer,
+            raw: buffer.into_boxed_str(),
             kind: argument_kind,
         }))
     }
@@ -1212,7 +1212,7 @@ impl<'a> Parser<'a> {
         self.pos >= self.input.len()
     }
 
-    fn error(&self, message: impl Into<String>) -> ParseError {
+    fn error(&self, message: impl Into<Box<str>>) -> ParseError {
         ParseError {
             message: message.into(),
             position: self.pos,
@@ -1296,12 +1296,12 @@ fn classify_argument(kind: &FilterKind, raw: &str, quoted: bool) -> ArgumentKind
 /// Splits `foo;bar;baz` or `"foo";"bar";"baz"` style extension lists.
 /// Semicolons inside quotes are treated as literals.
 /// Escaped semicolons outside quotes (`\;`) are also treated as literals.
-fn try_parse_list(raw: &str) -> Option<Vec<String>> {
+fn try_parse_list(raw: &str) -> Option<Vec<Box<str>>> {
     if !raw.contains(';') {
         return None;
     }
 
-    let mut parts = Vec::new();
+    let mut parts: Vec<Box<str>> = Vec::new();
     let mut start = 0;
     let mut in_quotes = false;
     let mut escaped = false;
@@ -1326,7 +1326,7 @@ fn try_parse_list(raw: &str) -> Option<Vec<String>> {
         if ch == ';' && !in_quotes {
             let part = raw[start..idx].trim();
             if !part.is_empty() {
-                parts.push(part.to_string());
+                parts.push(part.into());
             }
             start = idx + ch.len_utf8();
         }
@@ -1334,7 +1334,7 @@ fn try_parse_list(raw: &str) -> Option<Vec<String>> {
 
     let tail = raw[start..].trim();
     if !tail.is_empty() {
-        parts.push(tail.to_string());
+        parts.push(tail.into());
     }
 
     (!parts.is_empty()).then_some(parts)
@@ -1345,7 +1345,7 @@ fn try_parse_comparison(raw: &str) -> Option<ComparisonValue> {
     let operators = ["<=", ">=", "!=", "<", ">", "="];
     for op in operators {
         if let Some(value) = raw.strip_prefix(op) {
-            let value = value.trim().to_string();
+            let value: Box<str> = value.trim().into();
             if value.is_empty() {
                 return None;
             }
@@ -1400,12 +1400,12 @@ fn try_parse_dotted_range(raw: &str) -> Option<RangeValue> {
         start: if start_raw.is_empty() {
             None
         } else {
-            Some(start_raw.to_string())
+            Some(start_raw.into())
         },
         end: if end_raw.is_empty() {
             None
         } else {
-            Some(end_raw.to_string())
+            Some(end_raw.into())
         },
         separator: RangeSeparator::Dots,
     })
@@ -1425,8 +1425,8 @@ fn try_parse_hyphen_range(raw: &str) -> Option<RangeValue> {
         }
         if looks_like_date_fragment(left) && looks_like_date_fragment(right) {
             return Some(RangeValue {
-                start: Some(left.to_string()),
-                end: Some(right.to_string()),
+                start: Some(left.into()),
+                end: Some(right.into()),
                 separator: RangeSeparator::Hyphen,
             });
         }
@@ -1467,7 +1467,7 @@ mod tests {
     use super::*;
 
     fn word(text: &str) -> Expr {
-        Expr::Term(Term::Word(text.to_string()))
+        Expr::Term(Term::Word(text.into()))
     }
 
     #[test]
@@ -1518,7 +1518,7 @@ mod tests {
         let Expr::Term(Term::Word(path)) = &parts[0] else {
             panic!();
         };
-        assert_eq!(path, "/Users/demo/Documents");
+        assert_eq!(path.as_ref(), "/Users/demo/Documents");
         assert_eq!(parts[1], word("report"));
 
         let query = parse_query("/Volumes/Data OR /Users").unwrap();
@@ -1528,11 +1528,11 @@ mod tests {
         assert_eq!(options.len(), 2);
         assert!(matches!(
             &options[0],
-            Expr::Term(Term::Word(path)) if path == "/Volumes/Data"
+            Expr::Term(Term::Word(path)) if path.as_ref() == "/Volumes/Data"
         ));
         assert!(matches!(
             &options[1],
-            Expr::Term(Term::Word(path)) if path == "/Users"
+            Expr::Term(Term::Word(path)) if path.as_ref() == "/Users"
         ));
     }
 
@@ -1557,7 +1557,7 @@ mod tests {
             let FilterKind::Custom(name) = &filter.kind else {
                 panic!("expected drive-like custom filter");
             };
-            names.push(name.as_str());
+            names.push(name.as_ref());
         }
         assert_eq!(names, ["D", "E"]);
 
@@ -1668,7 +1668,10 @@ mod tests {
         let ArgumentKind::List(values) = &ext.argument.as_ref().unwrap().kind else {
             panic!("expected list argument");
         };
-        assert_eq!(values, &["txt", "doc"]);
+        assert_eq!(
+            values.iter().map(|s| s.as_ref()).collect::<Vec<&str>>(),
+            ["txt", "doc"]
+        );
 
         let Expr::Term(Term::Filter(size)) = &parts[1] else {
             panic!("expected filter");
@@ -1710,7 +1713,7 @@ mod tests {
             panic!();
         };
         assert_eq!(*op, ComparisonOp::Gt);
-        assert_eq!(value, "1GB");
+        assert_eq!(value.as_ref(), "1GB");
 
         let Expr::Term(Term::Filter(width)) = &parts[1] else {
             panic!();
@@ -1721,7 +1724,7 @@ mod tests {
             panic!();
         };
         assert_eq!(*op, ComparisonOp::Lte);
-        assert_eq!(value, "4000");
+        assert_eq!(value.as_ref(), "4000");
     }
 
     #[test]
@@ -1747,7 +1750,7 @@ mod tests {
         let Some(argument) = dm_filter.argument.as_ref() else {
             panic!("expected dm: argument");
         };
-        assert_eq!(argument.raw, "pastyear");
+        assert_eq!(argument.raw.as_ref(), "pastyear");
         assert!(matches!(argument.kind, ArgumentKind::Bare));
     }
 
@@ -1760,13 +1763,13 @@ mod tests {
         let Expr::Term(Term::Word(path)) = &parts[0] else {
             panic!();
         };
-        assert_eq!(path, "\\\\srv\\share");
+        assert_eq!(path.as_ref(), "\\\\srv\\share");
 
         let Expr::Term(Term::Filter(child)) = &parts[1] else {
             panic!();
         };
         assert!(matches!(child.kind, FilterKind::Child));
-        assert_eq!(child.argument.as_ref().unwrap().raw, "*.mp3");
+        assert_eq!(child.argument.as_ref().unwrap().raw.as_ref(), "*.mp3");
     }
 
     #[test]
